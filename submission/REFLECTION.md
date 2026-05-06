@@ -4,9 +4,9 @@
 
 ---
 
-**Họ Tên:** _<Họ Tên>_
-**Cohort:** _<A20-K1 / A20-K2 / ...>_
-**Ngày submit:** _<YYYY-MM-DD>_
+**Họ Tên:** Nguyễn Trần Khương An
+**Cohort:** _<A20-K1 >_
+**Ngày submit:** _<2026-05-06>_
 
 ---
 
@@ -14,18 +14,17 @@
 
 > Paste output của `python 00-setup/detect-hardware.py` vào đây, hoặc điền thủ công:
 
-- **OS:** _<macOS 14 / Windows 11 / Ubuntu 24.04 / ...>_
-- **CPU:** _<Apple M2 / Intel i7-12700H / AMD Ryzen 7 5800H / ...>_
-- **Cores:** _<physical / logical>_
-- **CPU extensions:** _<AVX2 / AVX-512 / NEON / —>_
-- **RAM:** _<GB>_
-- **Accelerator:** _<NVIDIA RTX 4060 8GB / Apple Metal / AMD ROCm / Vulkan / CPU only>_
-- **llama.cpp backend đã chọn:** _<CUDA / Metal / Vulkan / CPU>_
-- **Recommended model tier:** _<TinyLlama-1.1B / Qwen2.5-1.5B / Llama-3.2-3B / Qwen2.5-7B>_
+- **OS:** Windows 11
+- **CPU:** Intel(R) Core(TM) i7-10750H @ 2.60GHz
+- **Cores:** 6 physical / 12 logical
+- **CPU extensions:** AVX2, FMA, F16C
+- **RAM:** 16 GB
+- **Accelerator:** NVIDIA RTX 3060 Laptop GPU (6GB)
+- **llama.cpp backend đã chọn:** CPU (planned CUDA but chưa cài Toolkit)
+- **Recommended model tier:** Qwen2.5-1.5B (Q4_K_M)
 
-**Setup story** (≤ 80 chữ): những gì cần thay đổi để lab chạy được trên máy bạn (vd: dùng WSL2, install CUDA Toolkit, fall back sang Vulkan vì ROCm phiên bản kén, tắt antivirus để pip install nhanh hơn, v.v.):
-
-_Answer here._
+**Setup story (≤80 chữ):**
+Ban đầu build lỗi do thiếu `cmake` và CUDA Toolkit. Sau khi cài CMake thì build CPU thành công, nhưng CUDA vẫn chưa hoạt động vì thiếu `nvcc`. Do đó mình fallback sang CPU-only để hoàn thành benchmark trước, sau đó tối ưu bằng thread tuning.
 
 ---
 
@@ -33,14 +32,16 @@ _Answer here._
 
 > Paste bảng từ `benchmarks/01-quickstart-results.md` xuống đây (auto-generated bởi `python 01-llama-cpp-quickstart/benchmark.py`).
 
+Settings: `n_threads=6`, `n_ctx=2048`, `n_batch=512`, `n_gpu_layers=99`.
+
 | Model | Load (ms) | TTFT P50/P95 (ms) | TPOT P50/P95 (ms) | E2E P50/P95/P99 (ms) | Decode rate (tok/s) |
-|---|--:|--:|--:|--:|--:|
-| (Q4_K_M) | | | | | |
-| (Q2_K)   | | | | | |
+|---|---:|---:|---:|---:|---:|
+| qwen2.5-1.5b-instruct-q4_k_m.gguf | 2964 | 386 / 469 | 84.1 / 152.3 | 5622 / 6980 / 7186 | 11.9 |
+| qwen2.5-1.5b-instruct-q2_k.gguf | 731 | 526 / 675 | 72.7 / 77.2 | 5154 / 5346 / 5398 | 13.8 |
 
-**Một quan sát** (≤ 50 chữ): Q4_K_M vs Q2_K trên máy bạn — số liệu nói gì? Quality đáng đánh đổi không?
+## Observations
 
-_Answer here._
+Q2_K có decode rate cao hơn (~13.8 vs 11.9 tok/s) và E2E latency thấp hơn, nhưng TTFT lại cao hơn do load nhanh nhưng kém ổn định ở bước đầu. Q4_K_M chậm hơn ~15% nhưng cho chất lượng output tốt hơn, nên là lựa chọn cân bằng hơn cho inference.
 
 ---
 
@@ -50,74 +51,55 @@ _Answer here._
 
 | Concurrency | Total RPS | TTFB P50 (ms) | E2E P95 (ms) | E2E P99 (ms) | Failures |
 |--:|--:|--:|--:|--:|--:|
-| 10 | | | | | |
-| 50 | | | | | |
+| 10 | 1.44 | 5100 | 7800 | 9600 | 0 |
+| 50 | 1.53 | 9400 | 23000 | 25000 | 0 |
 
-**KV-cache observation** (từ `record-metrics.py`): peak `llamacpp:kv_cache_usage_ratio` ở concurrency 50 = _<0.XX>_, nghĩa là …
-
-_Answer here._
-
+**KV-cache observation** (từ `record-metrics.py`): Dựa vào log metrics, peak `llamacpp:n_busy_slots_per_decode` duy trì ở mức **3.66596**, và `llamacpp:requests_deferred` là **0.0**. Điều này có nghĩa là ở concurrency 50, mặc dù hệ thống bị nghẽn cổ chai về năng lực tính toán khiến độ trễ (E2E P95/P99) tăng vọt gấp 3 lần và RPS không tăng đáng kể, nhưng không có request nào bị đẩy vào hàng đợi chờ cấp phát (deferred = 0). Lượng KV-cache và số slots cấu hình vẫn đủ để tiếp nhận các request này cùng lúc mà không gây ra lỗi (0 failures).
 ---
 
 ## 4. Track 03 — Milestone integration
 
-- **N16 (Cloud/IaC):** _<piece you connected — k3d cluster / GCP project / docker-compose / "stub: localhost only">_
-- **N17 (Data pipeline):** _<piece — Airflow DAG / batch job / "stub: in-memory dict">_
-- **N18 (Lakehouse):** _<piece — Delta Lake table / Iceberg / "stub: SQLite">_
-- **N19 (Vector + Feature Store):** _<piece — Qdrant index / Feast / "stub: TOY_DOCS">_
+* **N16 (Cloud/IaC):** stub — chạy local
+* **N17 (Data pipeline):** stub — in-memory dict
+* **N18 (Lakehouse):** stub — SQLite
+* **N19 (Vector + Feature Store):** stub — TOY_DOCS
 
-**Nơi tốn nhiều ms nhất** trong pipeline (đo bằng `time.perf_counter` trong `pipeline.py`):
+**Latency breakdown (thực tế từ log):**
 
-- embed: _<ms>_
-- retrieve: _<ms>_
-- llama-server: _<ms>_
+* retrieve: **~0.0 - 0.1 ms**
+* llama-server (llm): **~2916 - 6532 ms** (biến động tùy theo câu hỏi và độ dài output sinh ra)
+* total: **~2916 - 6532 ms**
 
-**Reflection** (≤ 60 chữ): bottleneck nằm ở đâu? Có khớp với kỳ vọng không?
-
-_Answer here._
+**Reflection:**
+Bottleneck rõ ràng và tuyệt đối nằm ở llama-server (inference), chiếm gần như 100% tổng thời gian xử lý của cả pipeline. Quá trình retrieve diễn ra ngay lập tức (gần 0 ms) do đang sử dụng dữ liệu giả lập (stub/in-memory). Điều này đúng với kỳ vọng vì LLM text-generation luôn chiếm phần lớn độ trễ so với các bước xử lý dữ liệu và truy xuất ban đầu.
 
 ---
 
 ## 5. Bonus — The single change that mattered most
 
-> **Most important section.** Pick **một** thay đổi từ bonus track (build flag, thread sweep, quant pick, GPU offload, KV-cache quantization, speculative decoding, bất cứ challenge nào trong `BONUS-llama-cpp-optimization/CHALLENGES.md`) đã tạo ra speedup lớn nhất trên máy bạn.
+**Change:**
+Tune số lượng threads (`-t`) để match với khả năng xử lý thực tế của CPU (chọn giá trị tối ưu thay vì mặc định hoặc oversubscribe)
 
-**Change:** _<vd: rebuild llama.cpp với `-DGGML_NATIVE=ON -DGGML_BLAS=ON`; vd: hạ `-t` từ 12 xuống 6; vd: bật Metal trên M2>_
+---
 
-**Before vs after** (paste 2-3 dòng từ sweep output):
+**Before vs after:**
 
 ```
-before: <số liệu>
-after:  <số liệu>
-speedup: ~<X.Y>×
+before:
+-t 1  → 6.49 tok/s
+-t 6  → 16.07 tok/s
+
+after:
+-t 12 → 17.21 tok/s  (best)
+
+speedup: ~2.65× (1 → 12 threads)
 ```
 
-**Tại sao nó work** (1–2 đoạn ngắn — đây là phần grader đọc kỹ nhất):
-
-_Giải thích như đang nói với một bạn cùng lớp đang ngồi cạnh. Tránh "vibes-based" reasoning — bám vào mô hình mental của hardware (memory bandwidth? compute? cache?). Nếu kết quả khác kỳ vọng từ deck, nói rõ — đó là phần grader thưởng điểm._
-
 ---
 
-## 6. (Optional) Điều ngạc nhiên nhất
+**Tại sao nó work:**
 
-_(1–2 câu — không bắt buộc, nhưng người grader đọc tất cả)_
+LLM decode chủ yếu bị giới hạn bởi **memory bandwidth**, không phải compute thuần. Khi tăng số thread từ 1 lên gần số core (6–12), CPU tận dụng tốt hơn các pipeline xử lý và cache, giúp tăng throughput đáng kể (~2.6×).
 
-_Answer here._
+Tuy nhiên, khi vượt quá mức tối ưu (ví dụ `-t 24`), hiệu năng giảm (17.21 → 15.88 tok/s) do **oversubscription**: các thread logic tranh chấp cùng memory channel và cache (L2/L3), gây cache miss và context switching overhead. Điều này cho thấy điểm tối ưu không phải là max threads mà là mức cân bằng giữa compute và memory bandwidth.
 
----
-
-## 7. Self-graded checklist
-
-- [ ] `hardware.json` đã commit
-- [ ] `models/active.json` đã commit (hoặc paste path snapshot vào section 1)
-- [ ] `benchmarks/01-quickstart-results.md` đã commit
-- [ ] `benchmarks/02-server-results.md` (hoặc CSV từ `record-metrics.py`) đã commit
-- [ ] `benchmarks/bonus-*.md` đã commit (ít nhất 1 sweep)
-- [ ] Ít nhất 6 screenshots trong `submission/screenshots/` (xem `submission/screenshots/README.md`)
-- [ ] `make verify` exit 0 (chạy ngay trước khi push)
-- [ ] Repo trên GitHub ở chế độ **public**
-- [ ] Đã paste public repo URL vào VinUni LMS
-
----
-
-**Quan trọng:** repo phải **public** đến khi điểm được công bố. Nếu private, grader không xem được → 0 điểm.
